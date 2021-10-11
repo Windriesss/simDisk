@@ -7,26 +7,16 @@
 
 using namespace std;
 
-
 FileSystem::FileSystem() {
-	fstream FILE;
-	FILE.open("VirtualDisk", ios::binary | ios::in|ios::out);
+	FILE.open("VirtualDisk", ios::binary | ios::in);//试试看有无虚拟硬盘
 	if (!FILE) {
 		cout << "未发现虚拟硬盘，创建虚拟硬盘" << endl;
 		init();
-		load();
 	}
 	FILE.close();
-	FILE.open("VirtualDisk", ios::binary | ios::in | ios::out);
-	
-	FILE.write((char*)&S, sizeof(S));//将硬盘状态读进来
-	//0:超级块  1:inode位图  2:inode数据区  2050:数据块位图  2063:数据块
-	//默认载入
-	curPos=-1;//没有开始读写
-	FILE.seekg(S.inodePos, ios::beg);
-	FILE.read((char*)&curInode,sizeof(curInode));//当前工作目录或文件的inode
-	strcpy_s(curPath,512,curInode->name);//当前路径
-	FILE.close();
+	//-------------先把init调试好----------
+	load();//读磁盘状态
+
 }
 
 void FileSystem::init() {
@@ -35,10 +25,6 @@ void FileSystem::init() {
 	if (!FILE) {
 		cerr << "创建虚拟磁盘失败!" << endl;
 		return;
-	}
-	FILE.seekp(0, ios::beg);//申请空间，全部设置为0
-	for (int i = 0; i < S.blockNum * S.blockSize; ++i) {//申请blockNum个磁盘块
-		FILE.write(0, sizeof(char));
 	}
 	//------------初始化超级块------------
 	S.diskSize = 100 * 1024 * 1024;//磁盘容量，单位B  100*1024*1024B
@@ -52,6 +38,13 @@ void FileSystem::init() {
 	S.blockBMapPos = 2050 * S.blockSize;//块位图地址,即第几个字节开始，用13(12.5)个连续的数据块做块位图  
 	S.blockPos = 2063 * S.blockSize;
 	//-------------结束初始化超级块-------------
+
+
+	FILE.seekp(0, ios::beg);//申请空间，全部设置为0
+	for (int i = 0; i < S.blockNum * S.blockSize; ++i) {//申请blockNum个磁盘块
+		FILE.write(" ", sizeof(char));
+	}
+
 
 	FILE.seekp(0, ios::beg);//移到开头，填充超级块区
 	FILE.write((char*)&S, sizeof(S));
@@ -74,7 +67,7 @@ void FileSystem::init() {
 	t.gid=10000;//所属组id    10000表示root组
 	t.mod=777;//保护模式 所有人可读可写可执行
 	strcpy_s(t.name,136,"/");//文件名
-	t.type=0;//文件类型  0是目录，1是文件
+	t.type='0';//文件类型  0是目录，1是文件
 	GetLocalTime(&t.creatTime);//创建时间  16B
 	t.modiTime=t.creatTime;//最后一次修改时间
 	t.size=0;//文件大小 单位B
@@ -86,7 +79,7 @@ void FileSystem::init() {
 
 	}
 	FILE.seekp(S.inodePos, ios::beg);
-	FILE.write((char*)&t, sizeof(t));//把跟目录i节点写回去
+	FILE.write((char*)&t, sizeof(inode));//把根目录i节点写回去
 	//-----把inode改成空inode---------
 	//t.idx = 0;//inode序号 在循环里改
 	t.parentIdx = -1;//父目录的inode序号
@@ -95,7 +88,7 @@ void FileSystem::init() {
 	t.gid = -10000;//所属组id    10000表示root组
 	t.mod = 000;//保护模式 所有人可读可写可执行
 	strcpy_s(t.name, 136, "");//文件名
-	t.type = -1;//文件类型  0是目录，1是文件，-1为空
+	t.type = 'x';//文件类型  0是目录，1是文件，x为空
 	//&t.creatTime;两个时间不改
 	//t.modiTime = t.creatTime;//最后一次修改时间
 	//t.size = 0;//文件大小 单位B
@@ -103,9 +96,40 @@ void FileSystem::init() {
 	//-------------------------------------
 	for (int i = 1; i < S.inodeNum; ++i) {
 		t.idx = i;
-		FILE.write((char*)&t, sizeof(t));
+		FILE.write((char*)&t, sizeof(inode));
 	}
+	FILE.close();
 	return;
+}
+
+void FileSystem::load() {//读不到正确的东西
+	FILE.open("VirtualDisk", ios::binary | ios::in);//打开磁盘
+	if (!FILE) {
+		cerr << "打开磁盘失败！";
+	}
+	FILE.seekg(0, ios::beg);//读超级块
+	FILE.read((char*)&S, sizeof(S));
+	FILE.seekg(S.inodeBMapPos, ios::beg);//读inode位图
+	FILE.read((char*)&inodeBMap, sizeof(inodeBMap));
+	FILE.seekg(S.blockBMapPos, ios::beg);//读block位图
+	FILE.read((char*)&blockBMap, sizeof(blockBMap));
+	curInode = new inode;
+	FILE.seekg(S.inodePos, ios::beg);//读根目录i结点
+	FILE.read((char*)curInode, sizeof(inode));//当前工作目录或文件的inode
+	curPos = -1;//没有开始读写
+	strcpy_s(curPath, 512, curInode->name);//当前路径
+	inodeStack.push(0);//把根目录的i结点号加入到路径i节点栈中
+	FILE.close();
+}
+
+int FileSystem::RequestI() {
+	for (int i = 1; i < S.inodeNum; ++i) {
+		if (!inodeBMap[i]) {
+			inodeBMap.set(i);
+			return i;
+		}
+	}
+	return -1;//-1表示没有i节点了
 }
 
 int FileSystem::RequestD(int* t, int n) {
@@ -121,5 +145,25 @@ int FileSystem::RequestD(int* t, int n) {
 		return -1;//内存不足，返回错误
 	}
 	return 0;//正常返回
+}
 
+void FileSystem::save() {
+	FILE.open("VirtualDisk", ios::binary | ios::out | ios::in);//打开磁盘
+	if (!FILE) {
+		cerr << "打开磁盘失败！";
+	}
+	FILE.seekp(0, ios::beg);//写超级块
+	FILE.write((char*)&S, sizeof(S));
+	FILE.seekp(S.inodeBMapPos, ios::beg);//写inode位图
+	FILE.write((char*)&inodeBMap, sizeof(inodeBMap));
+	FILE.seekp(S.blockBMapPos, ios::beg);//写block位图
+	FILE.write((char*)&blockBMap, sizeof(blockBMap));
+	FILE.close();
+}
+
+
+void FileSystem::print() {
+	S.print();
+	curInode->print();
+	cout << "当前工作路径：" << curPath << endl;
 }
