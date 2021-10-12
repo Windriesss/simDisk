@@ -147,6 +147,36 @@ int FileSystem::RequestD(int* t, int n) {
 	return 0;//正常返回
 }
 
+inode* FileSystem::getInode(int idx) {//根据i节点号返回i节点的指针
+	if (idx < 0 || idx >= 8192) {
+		cerr << "i结点序号超出范围!" << endl;
+		return NULL;
+	}
+	inode* ret = new inode();
+	FILE.open("VirtualDisk", ios::binary | ios::in);//打开磁盘
+	if (!FILE) {
+		cerr << "打开磁盘失败！";
+	}
+	FILE.seekg(S.inodePos+idx*sizeof(inode), ios::beg);//移到对应的i节点的位置
+	FILE.read((char*)ret, sizeof(inode));//读入
+	return ret;
+}
+
+
+vector<string> FileSystem::split(string str, const string& t) {
+	vector<string> ret;
+	if (str.length() == 0) return ret;
+	str += t;//在最后加一个分隔符，便于分割
+	while (str.length()) {
+		int nextPos = str.find_first_of(t);//找到第一个分隔符出现的位置
+		string sub = str.substr(0, nextPos);//把最前面的一个子串分割出来
+		ret.push_back(sub);
+		str = str.substr(nextPos + 1, str.size() - (nextPos + 1));//在母串中把子串截去
+	}
+	return ret;
+}
+
+
 void FileSystem::save() {
 	FILE.open("VirtualDisk", ios::binary | ios::out | ios::in);//打开磁盘
 	if (!FILE) {

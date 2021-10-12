@@ -7,6 +7,7 @@
 #include<fstream>
 #include<bitset>
 #include<vector>
+#include<string>
 #include<stack>
 using namespace std;
 
@@ -28,8 +29,11 @@ public:
 	void load();
 	int RequestI();
 	int RequestD(int* t, int n);
+	inode* getInode(int idx);
+	vector<string> split(string str, const string& t);
 	void print();//打印磁盘信息，调试用
 	void save();
+
 };
 
 

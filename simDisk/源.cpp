@@ -8,7 +8,10 @@ using namespace std;
 int main() {//²âÊÔ´úÂë
 	FileSystem f;
 	//f.print();
-	cout << sizeof(DirectoryItem);
+	//cout << sizeof(DirectoryItem);
+	inode* t;
+	t = f.getInode(0);
+	t->print();
 	/*inode t;
 	cout << "inode Size:" << sizeof(t) << endl;
 	SuperBlock s;
