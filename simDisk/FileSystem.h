@@ -36,7 +36,7 @@ public:
 	DirectoryItem* getDirectorItem(inode*, int);//取目录中的第i个目录项
 	int getParentDirIndex(string);//找到路径中的父目录
 	int getIndex(string);//找到路径所对应的i结点
-	int dirFindByName(inode* ,string);//找到文件夹中，名字为name的i节点号
+	int dirFindByName(inode* ,string);//找到文件夹中，名字为name的i节点号a
 
 	//------------修改系统信息辅助函数------------
 	int RequestI();//申请一个i节点

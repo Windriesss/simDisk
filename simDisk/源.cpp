@@ -9,6 +9,5 @@ int main() {//²âÊÔ´úÂë
 	FileSystem f;
 	inode* t;
 	f.dir("/");
-	f.md("/testmd");
-	f.dir("/");
+	f.md("/as2d");
 }

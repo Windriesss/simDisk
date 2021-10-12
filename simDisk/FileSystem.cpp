@@ -16,13 +16,16 @@ FileSystem::FileSystem() {
 	}
 	FILE.close();
 	//-------------先把init调试好----------
+	FILE.open("VirtualDisk", ios::binary | ios::in | ios::out);
+	if (!FILE) {
+		cerr << "FileSystem打开虚拟硬盘失败！" << endl;
+	}
 	load();//读磁盘状态
-
 }
 
 void FileSystem::init() {
 	cout << "正在创建文件系统 ..." << endl;
-	fstream FILE("VirtualDisk", ios::binary|ios::out);//申请100M磁盘空间
+	FILE.open("VirtualDisk", ios::binary|ios::out);//申请100M磁盘空间
 	if (!FILE) {
 		cerr << "创建虚拟磁盘失败!" << endl;
 		return;
@@ -99,12 +102,12 @@ void FileSystem::init() {
 		t.idx = i;
 		FILE.write((char*)&t, sizeof(inode));
 	}
-	FILE.close();
+	FILE.flush();
 	return;
 }
 
-void FileSystem::load() {//读不到正确的东西
-	FILE.open("VirtualDisk", ios::binary | ios::in);//打开磁盘
+void FileSystem::load() {
+	//FILE.open("VirtualDisk", ios::binary | ios::in|ios::out);//打开磁盘
 	if (!FILE) {
 		cerr << "load()" << "打开磁盘失败！" << endl;
 	}
@@ -120,7 +123,6 @@ void FileSystem::load() {//读不到正确的东西
 	curPos = -1;//没有开始读写
 	strcpy_s(curPath, 512, curInode->name);//当前路径
 	inodeStack.push(0);//把根目录的i结点号加入到路径i节点栈中
-	FILE.close();
 }
 
 int FileSystem::RequestI() {
@@ -155,7 +157,7 @@ inode* FileSystem::getInode(int idx) {//根据i节点号返回i节点的指针
 	//调用这个函数前必须先打开文件
 	if (!FILE) {
 		cerr << "getInode()调用前没有打开文件！终止！" << endl;
-		FILE.open("VirtualDisk", ios::binary | ios::out | ios::in);//打开磁盘
+		//FILE.open("VirtualDisk", ios::binary | ios::out | ios::in);//打开磁盘
 		//return NULL;
 	}
 	if (idx < 0 || idx >= 8192) {
@@ -264,7 +266,7 @@ int FileSystem::dirFindByName(inode* dirInode,string name) {
 	int FileNum = dirInode->size;//该文件夹总共有多少个文件
 	DirectoryItem *dirItem = new DirectoryItem();
 	for (int i = 0; i <= FileNum / 7; ++i) {//在第几个文件块里,一个文件块可以放7个目录项
-		FILE.seekg(dirInode->dataBlock[i] * S.blockNum, ios::beg);
+		FILE.seekg(dirInode->dataBlock[i] * S.blockSize, ios::beg);
 		for (int j = 0; j<7 && FileNum>i * 7 + j; ++j) {//文件块中的第几个，且不能越界访问
 			FILE.read((char*)dirItem, sizeof(DirectoryItem));
 			if (name.compare(dirItem->name) == 0) {//名字相同，可以返回结果了
@@ -272,17 +274,20 @@ int FileSystem::dirFindByName(inode* dirInode,string name) {
 			}
 		}
 	}
+	if (!FILE) {
+		cout << "这里不行了哦！" << endl;
+	}
 	return -1;//在该文件夹下没有该文件或目录
 }
 
 void FileSystem::postInode(inode* i) {
 	if (!FILE) {
 		cerr << "postInode()调用时未打开文件！终止！" << endl;
-		FILE.open("VirtualDisk", ios::binary | ios::out | ios::in);//打开磁盘
+		//FILE.open("VirtualDisk", ios::binary | ios::out | ios::in);//打开磁盘
 	}
 	FILE.seekp(S.inodePos + i->idx * sizeof(inode), ios::beg);
 	FILE.write((char*)i, sizeof(inode));
-	FILE.close();
+	FILE.flush();
 }
 
 void FileSystem::postDirItem(inode* parentInode, inode* insertInode) {
@@ -296,14 +301,16 @@ void FileSystem::postDirItem(inode* parentInode, inode* insertInode) {
 	strcpy_s(newDirItem->name, 136, insertInode->name);
 	newDirItem->type = insertInode->type;
 	
-	parentInode->size++;//目录项的数目加1
+
 	int blockNum = parentInode->size / 7;//写在第几块数据块中
 	int deviation = parentInode->size % 7;//写在数据块的哪一项中
 	FILE.seekp(parentInode->dataBlock[blockNum] * S.blockSize + deviation * sizeof(DirectoryItem), ios::beg);//把指针移到该目录项存放的位置
 	FILE.write((char*)newDirItem, sizeof(DirectoryItem));//写入磁盘中
+	parentInode->size++;//目录项的数目加1
 
 	GetLocalTime(&(parentInode->modiTime));//更改父目录的修改时间
 	postInode(parentInode);//把父目录inode也写回磁盘中，直接同步
+	FILE.flush();
 	return;
 }
 
@@ -311,7 +318,7 @@ void FileSystem::dirInit(inode* parentInode, string name) {
 	//！！！没有完整判断目录是否满
 	if (!FILE) {
 		cerr << "dirInit()调用前没有打开文件！终止！" << endl;
-		FILE.open("VirtualDisk", ios::binary | ios::out | ios::in);//打开磁盘
+		//FILE.open("VirtualDisk", ios::binary | ios::out | ios::in);//打开磁盘
 		//return;
 	}
 	if (parentInode->size > 70) {
@@ -342,7 +349,7 @@ void FileSystem::dirInit(inode* parentInode, string name) {
 void FileSystem::save() {
 	if (!FILE) {
 		cerr << "save()调用时未打开文件！终止！" << endl;
-		FILE.open("VirtualDisk", ios::binary | ios::out | ios::in);//打开磁盘
+		//FILE.open("VirtualDisk", ios::binary | ios::out | ios::in);//打开磁盘
 	}
 	FILE.seekp(0, ios::beg);//写超级块
 	FILE.write((char*)&S, sizeof(S));
@@ -350,6 +357,7 @@ void FileSystem::save() {
 	FILE.write((char*)&inodeBMap, sizeof(inodeBMap));
 	FILE.seekp(S.blockBMapPos, ios::beg);//写block位图
 	FILE.write((char*)&blockBMap, sizeof(blockBMap));
+	FILE.flush();
 }
 
 

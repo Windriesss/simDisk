@@ -4,6 +4,16 @@
 #include<Windows.h>
 #include<iostream>
 using namespace std;
+
+struct DirectoryItem {//目录项
+	int inodeIdx;//i节点号
+	char name[136];//文件名
+	char type;//文件类型
+	void print() {
+		cout << "i节点号：" << inodeIdx << "  " << "文件名：" << name << "  ";
+		cout << "文件类型：" << (type == 0 ? "目录" : "文件") << endl;
+	}
+};
 struct inode {//256B
 	int idx;//inode序号
 	int parentIdx;//父目录的inode序号
@@ -19,6 +29,20 @@ struct inode {//256B
 	int dataBlock[14];//14个数据块的地址，后4块是一级页表，文件最大内容1MB+10KB
 	void printTime(SYSTEMTIME st) {
 		printf("%u-%u-%u %u:%u:%u\n", st.wYear, st.wMonth, st.wDay,st.wHour, st.wMinute, st.wSecond);
+	}
+	string getModiTime() {
+		string t("%u-%u-%u %u:%u:%u");
+		char targetString[1024];
+		// 格式化，并获取最终需要的字符串
+		snprintf(targetString, sizeof(targetString), t.c_str(), modiTime.wYear, modiTime.wMonth, modiTime.wDay,
+			modiTime.wHour, modiTime.wMinute, modiTime.wSecond);
+		t = targetString;
+		return t;
+	}
+	int getSize() {
+		if (type == '1') return size;
+		if (type == '0') return size * sizeof(DirectoryItem);
+		return -1;
 	}
 	void print() {
 		cout << "inode序号:" << idx << endl;
@@ -64,20 +88,6 @@ struct SuperBlock {
 		cout << "数据块地址:" << blockPos << endl;
 	}
 };
-struct DirectoryItem {//目录项
-	int inodeIdx;//i节点号
-	char name[136];//文件名
-	char type;//文件类型
-	void print() {
-		cout << "i节点号：" << inodeIdx << "  ";
-		if (type == '0') {
-			cout << "目录名：" << name << "  ";
-		}
-		else if (type == '1') {
-			cout << "文件名：" << name << "  ";
-		}
-		cout << endl;
-	}
-};
+
 
 #endif
