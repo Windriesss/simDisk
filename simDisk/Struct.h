@@ -68,6 +68,16 @@ struct DirectoryItem {//目录项
 	int inodeIdx;//i节点号
 	char name[136];//文件名
 	char type;//文件类型
+	void print() {
+		cout << "i节点号：" << inodeIdx << "  ";
+		if (type == '0') {
+			cout << "目录名：" << name << "  ";
+		}
+		else if (type == '1') {
+			cout << "文件名：" << name << "  ";
+		}
+		cout << endl;
+	}
 };
 
 #endif

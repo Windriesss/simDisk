@@ -29,5 +29,8 @@
     <ClCompile Include="FileSystem.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="cmd.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
