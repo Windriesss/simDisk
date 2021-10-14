@@ -19,13 +19,15 @@ FileSystem::FileSystem() {
 	FILE.open("VirtualDisk", ios::binary | ios::in | ios::out);
 	if (!FILE) {
 		cerr << "FileSystem打开虚拟硬盘失败！" << endl;
+		return;
 	}
 	load();//读磁盘状态
 }
 
 void FileSystem::init() {
 	cout << "正在创建文件系统 ..." << endl;
-	FILE.open("VirtualDisk", ios::binary|ios::out);//申请100M磁盘空间
+	FILE.close();//不管有没打开，先关闭
+	FILE.open("VirtualDisk", ios::binary | ios::in | ios::out);
 	if (!FILE) {
 		cerr << "创建虚拟磁盘失败!" << endl;
 		return;
@@ -107,7 +109,6 @@ void FileSystem::init() {
 }
 
 void FileSystem::load() {
-	//FILE.open("VirtualDisk", ios::binary | ios::in|ios::out);//打开磁盘
 	if (!FILE) {
 		cerr << "load()" << "打开磁盘失败！" << endl;
 	}
@@ -119,10 +120,10 @@ void FileSystem::load() {
 	FILE.read((char*)&blockBMap, sizeof(blockBMap));
 	curInode = new inode;
 	FILE.seekg(S.inodePos, ios::beg);//读根目录i结点
-	FILE.read((char*)curInode, sizeof(inode));//当前工作目录或文件的inode
+	FILE.read((char*)curInode, sizeof(inode));//读根目录的inode
 	curPos = -1;//没有开始读写
 	strcpy_s(curPath, 512, curInode->name);//当前路径
-	inodeStack.push(0);//把根目录的i结点号加入到路径i节点栈中
+	inodeStack.push_back(curInode);//把根目录的i结点号加入到路径i节点栈中
 }
 
 int FileSystem::RequestI() {
@@ -141,7 +142,6 @@ int FileSystem::RequestD(int* t, int n) {
 	int i;
 	for (i = 0; i < S.blockNum&&getNum<n; ++i) {
 		if (!blockBMap[i]) {//找到一位空位
-			blockBMap.set(i);//申请这一位
 			t[getNum++] = i;
 		}
 	}
@@ -149,16 +149,67 @@ int FileSystem::RequestD(int* t, int n) {
 		cerr << "RequestD()错误！数据块不足！" << endl;
 		return -1;//内存不足，返回错误
 	}
-	save();
+	for (i = 0; i < n; ++i) {//确保有足够多的数据块才一次申请
+		blockBMap.set(t[i]);//申请这一位
+	}
+	save();//写回内存，同步更新
 	return 0;//正常返回
+}
+
+void FileSystem::delI(inode* delInode) {
+	
+	//父目录也要删除目录项，然后用最后一项填补空位
+	inode* parentInode = getInode(delInode->parentIdx);//取父目录节点
+	for (int i = 0; i < parentInode->size-1; ++i) {//如果是最后一项的话，父目录的目录项数减一就相当于丢弃该目录项
+		DirectoryItem* dirItem = getDirectorItem(parentInode, i);//依次取出目录项
+		if (strcmp(delInode->name, dirItem->name) == 0) {//如果是所要找的目录项
+			DirectoryItem* lastItem = getDirectorItem(parentInode, parentInode->size - 1);//取出最后一个目录项
+			postDirItem(parentInode, lastItem, i);
+		}
+	}
+	parentInode->size -= 1;//父目录的目录项数减一
+	postInode(parentInode);//更改了的i节点，及时存回
+
+	delInode->linkNum -= 1;//连接数减一
+	if (delInode->linkNum != 0) {//还有别的文件指向这个inode
+		postInode(delInode);//更新i节点的信息
+	}
+	else {//最后一个指向该inode的文件
+		if (delInode->type == '0') {//这个文件是个文件夹，要级联删除
+			for (int i = 0; i < delInode->size; ++i) {
+				DirectoryItem* dirItem = getDirectorItem(delInode, i);//取出目录项
+				delI(getInode(dirItem->inodeIdx));//删除目录项所指的结点
+			}
+		}
+		inodeBMap.reset(delInode->idx);//释放该i节点
+		delD(delInode->dataBlock, 10);//释放该文件所占空间
+		save();//更新i节点位图的信息
+	}
+
+}
+
+void FileSystem::delD(int blockIdx) {
+	if (blockIdx > 0) {
+		blockBMap.reset(blockIdx);//
+		save();
+	}
+
+}
+
+void FileSystem::delD(int* dataBlock, int n) {
+	for (int i = 0; i < n; ++i) {
+		if (dataBlock[i] > 0) {
+			blockBMap.reset(dataBlock[i]);
+		}
+	}
+	save();
 }
 
 inode* FileSystem::getInode(int idx) {//根据i节点号返回i节点的指针
 	//调用这个函数前必须先打开文件
 	if (!FILE) {
 		cerr << "getInode()调用前没有打开文件！终止！" << endl;
-		//FILE.open("VirtualDisk", ios::binary | ios::out | ios::in);//打开磁盘
-		//return NULL;
+		return NULL;
 	}
 	if (idx < 0 || idx >= 8192) {
 		cerr << "getInode()错误！i结点序号超出范围！输入的i结点号为："<<idx<<endl;
@@ -167,24 +218,6 @@ inode* FileSystem::getInode(int idx) {//根据i节点号返回i节点的指针
 	inode* ret = new inode();
 	FILE.seekg(S.inodePos+idx*sizeof(inode), ios::beg);//移到对应的i节点的位置
 	FILE.read((char*)ret, sizeof(inode));//读入
-	return ret;
-}
-
-
-vector<string> FileSystem::split(string str, const string& t) {
-	vector<string> ret;
-	if (str.length() == 0) return ret;
-	str += t;//在最后加一个分隔符，便于分割
-	while (str.length()) {
-		int nextPos = str.find_first_of(t);//找到第一个分隔符出现的位置
-		string sub = str.substr(0, nextPos);//把最前面的一个子串分割出来
-		ret.push_back(sub);
-		str = str.substr(nextPos + 1, str.size() - (nextPos + 1));//在母串中把子串截去
-	}
-	for (int i = ret.size()-1; i >0; --i) {
-		if (ret[i].empty()) ret.pop_back();
-		else break;
-	}
 	return ret;
 }
 
@@ -201,11 +234,14 @@ int FileSystem::getParentDirIndex(string path) {
 		curInode = getInode(curInodeIdx);
 	}
 	else if (pathSplit[0] == "."|| pathSplit[0] == "..") {
-		curInodeIdx = inodeStack.top();//工作目录的最后一个
-		curInode = getInode(curInodeIdx);
-		if (pathSplit[0] == ".") {
+		curInodeIdx = inodeStack.back()->idx;//工作目录的最后一个
+		curInode = inodeStack.back();
+		if (pathSplit[0] == "..") {
+			if (inodeStack.size() <= 1) {
+				cout << "getParentDirIndex()错误！没有上一级目录！终止！" << endl;
+			}
 			curInodeIdx = curInode->parentIdx;//该工作目录的上一层
-			curInode = getInode(curInodeIdx);
+			curInode = inodeStack[inodeStack.size() - 2];
 		}
 	}
 	else {//错误输入
@@ -228,6 +264,16 @@ int FileSystem::getIndex(string path) {
 	if (path == "/") {//根目录没有父目录，不适合下面的操作
 		return 0;
 	}
+	if (path == ".") {
+		return inodeStack.back()->idx;
+	}
+	if (path == "..") {
+		if (inodeStack.size() <= 1) {
+			cerr << "getIndex()错误！没有上一级目录！" << endl;
+			return -1;
+		}
+		else return inodeStack[inodeStack.size() - 2]->idx;
+	}
 	int parentInodeIdx=getParentDirIndex(path);//取其父目录的i结点号
 	if (parentInodeIdx == -1) {
 		cerr << "getDirIndx()错误！终止命令！" << endl;
@@ -239,7 +285,6 @@ int FileSystem::getIndex(string path) {
 	int inodeIdx=dirFindByName(parentInode, dirname);//找出所取文件的i结点号
 	return inodeIdx;
 }
-
 
 DirectoryItem* FileSystem::getDirectorItem(inode* dirInode, int idx) {//取文件夹中的第idx项
 	if (dirInode->type != '0') {
@@ -255,6 +300,35 @@ DirectoryItem* FileSystem::getDirectorItem(inode* dirInode, int idx) {//取文件夹
 	FILE.seekg(dirInode->dataBlock[blockNum] * S.blockSize + divation * sizeof(DirectoryItem), ios::beg);
 	DirectoryItem* ret = new DirectoryItem;
 	FILE.read((char*)ret, sizeof(DirectoryItem));
+	return ret;
+}
+
+string FileSystem::getMod(inode* fileNode) {
+	return fileNode->getType() + modInt2String(fileNode->mod);
+}
+
+void FileSystem::updateInodeStack() {
+	if (!FILE) {
+		cerr << "updateInodeStack()调用前没有打开FILE！请注意！" << endl;
+		return;
+	}
+	int len = inodeStack.size();
+	for (int i = 0; i < len; ++i) {
+		FILE.seekg(S.inodePos + inodeStack[i]->idx * sizeof(inode), ios::beg);
+		FILE.read((char*)inodeStack[i], sizeof(inode));
+	}
+	return;
+}
+
+string FileSystem::getWd() {
+	string ret="/";
+	int len = inodeStack.size();
+	for (int i = 1; i < len; ++i) {
+		ret += inodeStack[i]->name;
+		if (i != len - 1) {
+			ret += '/';
+		}
+	}
 	return ret;
 }
 
@@ -274,16 +348,13 @@ int FileSystem::dirFindByName(inode* dirInode,string name) {
 			}
 		}
 	}
-	if (!FILE) {
-		cout << "这里不行了哦！" << endl;
-	}
 	return -1;//在该文件夹下没有该文件或目录
 }
 
 void FileSystem::postInode(inode* i) {
 	if (!FILE) {
 		cerr << "postInode()调用时未打开文件！终止！" << endl;
-		//FILE.open("VirtualDisk", ios::binary | ios::out | ios::in);//打开磁盘
+		return;
 	}
 	FILE.seekp(S.inodePos + i->idx * sizeof(inode), ios::beg);
 	FILE.write((char*)i, sizeof(inode));
@@ -293,7 +364,7 @@ void FileSystem::postInode(inode* i) {
 void FileSystem::postDirItem(inode* parentInode, inode* insertInode) {
 	//！！！一级间址还没做，判断不完整
 	if (parentInode->size > 70) {
-		cerr << "dirInit()失败，父目录已满！" << endl;
+		cerr << "postDirItem()失败，父目录已满！" << endl;
 		return;
 	}
 	DirectoryItem* newDirItem = new DirectoryItem;//创建一个新的目录项，并且往里面填信息
@@ -301,7 +372,6 @@ void FileSystem::postDirItem(inode* parentInode, inode* insertInode) {
 	strcpy_s(newDirItem->name, 136, insertInode->name);
 	newDirItem->type = insertInode->type;
 	
-
 	int blockNum = parentInode->size / 7;//写在第几块数据块中
 	int deviation = parentInode->size % 7;//写在数据块的哪一项中
 	FILE.seekp(parentInode->dataBlock[blockNum] * S.blockSize + deviation * sizeof(DirectoryItem), ios::beg);//把指针移到该目录项存放的位置
@@ -314,12 +384,31 @@ void FileSystem::postDirItem(inode* parentInode, inode* insertInode) {
 	return;
 }
 
+void FileSystem::postDirItem(inode* parentInode, DirectoryItem* dirItem, int n) {
+	if (parentInode->size > 70) {
+		cerr << "postDirItem()失败，父目录已满！" << endl;
+		return;
+	}
+	if (n > parentInode->size) {
+		cerr << "postDirItem()失败，超出目录项大小!" << endl;
+		return;
+	}
+	int blockNum = n / 7;//写在第几块数据块中
+	int deviation = n % 7;//写在数据块的哪一项中
+	FILE.seekp(parentInode->dataBlock[blockNum] * S.blockSize + deviation * sizeof(DirectoryItem), ios::beg);//把指针移到该目录项存放的位置
+	FILE.write((char*)dirItem, sizeof(DirectoryItem));//写入磁盘中
+
+	GetLocalTime(&(parentInode->modiTime));//更改父目录的修改时间
+	postInode(parentInode);//把父目录inode也写回磁盘中，直接同步
+	FILE.flush();
+	return;
+}
+
 void FileSystem::dirInit(inode* parentInode, string name) {
 	//！！！没有完整判断目录是否满
 	if (!FILE) {
 		cerr << "dirInit()调用前没有打开文件！终止！" << endl;
-		//FILE.open("VirtualDisk", ios::binary | ios::out | ios::in);//打开磁盘
-		//return;
+		return;
 	}
 	if (parentInode->size > 70) {
 		cerr << "dirInit()失败，父目录已满！" << endl;
@@ -336,7 +425,7 @@ void FileSystem::dirInit(inode* parentInode, string name) {
 	newDirInode->mod=777;//保护模式
 	strcpy_s(newDirInode->name,136,name.c_str());//文件名
 	newDirInode->type='0';//文件类型  0表示目录  1表示文件
-	GetSystemTime(&(newDirInode->creatTime));//创建时间  16B
+	GetLocalTime(&(newDirInode->creatTime));//创建时间  16B
 	newDirInode->modiTime=newDirInode->creatTime;//最后一次修改时间
 	newDirInode->size=0;//文件大小 单位B
 	RequestD(newDirInode->dataBlock,10);//14个数据块的地址，后4块是一级页表，文件最大内容1MB+10KB
@@ -345,11 +434,9 @@ void FileSystem::dirInit(inode* parentInode, string name) {
 	postDirItem(parentInode, newDirInode);//为父目录加目录项
 }
 
-
 void FileSystem::save() {
 	if (!FILE) {
 		cerr << "save()调用时未打开文件！终止！" << endl;
-		//FILE.open("VirtualDisk", ios::binary | ios::out | ios::in);//打开磁盘
 	}
 	FILE.seekp(0, ios::beg);//写超级块
 	FILE.write((char*)&S, sizeof(S));
@@ -360,9 +447,34 @@ void FileSystem::save() {
 	FILE.flush();
 }
 
-
 void FileSystem::print() {
 	S.print();
 	curInode->print();
 	cout << "当前工作路径：" << curPath << endl;
+}
+
+vector<string> FileSystem::split(string str, const string& t) {
+	vector<string> ret;
+	if (str.length() == 0) return ret;
+	str += t;//在最后加一个分隔符，便于分割
+	while (str.length()) {
+		int nextPos = str.find_first_of(t);//找到第一个分隔符出现的位置
+		string sub = str.substr(0, nextPos);//把最前面的一个子串分割出来
+		ret.push_back(sub);
+		str = str.substr(nextPos + 1, str.size() - (nextPos + 1));//在母串中把子串截去
+	}
+	for (int i = ret.size() - 1; i > 0; --i) {
+		if (ret[i].empty()) ret.pop_back();
+		else break;
+	}
+	return ret;
+}
+
+string FileSystem::modInt2String(int mod) {
+	int other, group, owner;
+	other = mod % 10; mod /= 10;
+	group = mod % 10; mod /= 10;
+	owner = mod;
+	string arr[8] = { "---","--x","-w-","-wx","r--","r-x","rw-","rwx" };
+	return arr[owner] + arr[group] + arr[other];
 }

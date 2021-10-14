@@ -22,7 +22,7 @@ public: //方便测试，实际使用需要关闭
 	int curPos;//当前读写指针所在位置
 	inode* curInode;//当前工作目录或文件的inode指针
 	char curPath[512];//当前路径
-	stack<int> inodeStack;//路径i节点栈
+	vector<inode*> inodeStack;//路径i节点栈
 
 public:
 	FileSystem();
@@ -35,14 +35,21 @@ public:
 	inode* getInode(int);//用i节点号取i节点
 	DirectoryItem* getDirectorItem(inode*, int);//取目录中的第i个目录项
 	int getParentDirIndex(string);//找到路径中的父目录
-	int getIndex(string);//找到路径所对应的i结点
+	int getIndex(string);//找到路径所对应的i结点号
 	int dirFindByName(inode* ,string);//找到文件夹中，名字为name的i节点号a
+	string getMod(inode*);//获取文件保护模式
+	string getWd();//获取工作路径字符串
+	void updateInodeStack();//更新工作i节点栈
 
 	//------------修改系统信息辅助函数------------
 	int RequestI();//申请一个i节点
+	void delI(inode*);//删除i节点，等同于删除文件或文件夹
 	int RequestD(int*, int);//申请n块数据块
+	void delD(int);//删除单个数据块
+	void delD(int*, int);//删除数据块数组
 	void postInode(inode*);//把该inode写回磁盘
 	void postDirItem(inode*, inode*);//插入一个新的目录项，第一个inode是父目录，第二个是子目录或文件的inode
+	void postDirItem(inode*, DirectoryItem*, int);//在inode*中插入一个目录项，目录项为DirItem,插在第i个位置
 	void dirInit(inode*, string);//在文件夹下添加新的文件夹
 	
 	//-----------调试辅助函数-------------------
@@ -50,11 +57,17 @@ public:
 
 
 	//------------命令---------------------------------
+	void format();//格式化硬盘
 	void info();//显示系统信息
 	void md(string);//创建文件夹
 	void dir(string);//显示目录信息
-
+	void cd(string);//更改工作目录
+	void pwd();//打印当前工作目录
+	void rd(string);//删除文件夹
+	
+	
 	//-------------其他辅助函数------------------------
 	vector<string> split(string, const string&);//分割字符串
+	string modInt2String(int);
 };
 #endif

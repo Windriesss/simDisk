@@ -44,6 +44,12 @@ struct inode {//256B
 		if (type == '0') return size * sizeof(DirectoryItem);
 		return -1;
 	}
+	string getType() {
+		string ret;
+		if (type == '0') ret = "d";
+		else if (type == '1') ret = "-";
+		return ret;
+	}
 	void print() {
 		cout << "inodeÐòºÅ:" << idx << endl;
 		cout << "¸¸Ä¿Â¼µÄinodeÐòºÅ:" << parentIdx << endl;
