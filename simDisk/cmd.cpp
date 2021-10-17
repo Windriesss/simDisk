@@ -40,7 +40,7 @@ void FileSystem::info() {
 	}
 	S.print();
 	cout << "\t磁盘剩余空间:\t\t" << freeSpace << "MB" << endl;
-	cout << "\t空闲创建inode数:\t" << freeInode << endl;
+	cout << "\t空闲inode数:\t\t" << freeInode << endl;
 	cout << "\t总目录数:\t\t" << dirNum << endl;
 	cout << "\t总文件数:\t\t" << fileNum << endl;
 }
@@ -290,6 +290,46 @@ void FileSystem::del(string path) {
 	return;
 }
 
+void FileSystem::check() {
+	bitset<8192> newInodeBMap; //1个block存  1024B
+	bitset<100 * 1024> newBlockBMap; //13个block存  12.5*1024B
+	newInodeBMap.reset();
+	newBlockBMap.reset();
+	for (int i = 0; i < 2063; ++i) {//前面的0-2062块已经被使用
+		newBlockBMap.set(i);
+	}
+	checkHelp(0, newInodeBMap, newBlockBMap);
+	if (inodeBMap == newInodeBMap && blockBMap == newBlockBMap) {
+		cout << "检查完毕,未发现错误！" << endl;
+		return;
+	}
+	else {
+		cout << "检查完毕,发现以下错误:" << endl;
+		if (inodeBMap != newInodeBMap) {
+			cout << "发生错误的i结点号:";
+			for (int i = 0; i < S.inodeNum; ++i) {
+				if (inodeBMap[i] != newInodeBMap[i]) {
+					cout << i << ' ';
+				}
+			}
+			cout << endl;
+		}
+		if (blockBMap != newBlockBMap) {
+			cout << "发生错误的数据块号:";
+			for (int i = 0; i < S.blockNum; ++i) {
+				if (blockBMap[i] != newBlockBMap[i]) {
+					cout << i << ' ';
+				}
+			}
+			cout << endl;
+		}
+		inodeBMap = newInodeBMap;
+		blockBMap = newBlockBMap;
+		save();
+		cout << "错误已修复" << endl;
+	}
+}
+
 void FileSystem::copy(string src, string dst) {//复制文件
 	bool srcFlag = 0, dstFlag = 0;//是否在主机磁盘上，是的话置1
 	if (src.size() >= 6 && src.substr(0, 6) == "<host>") {
@@ -298,6 +338,13 @@ void FileSystem::copy(string src, string dst) {//复制文件
 	if (dst.size() >= 6 && dst.substr(0, 6) == "<host>") {
 		dstFlag = 1;
 	}
+	if (!srcFlag) {//不是主机路径，可以自动补全
+		src = cmpPath(src);//自动补齐路径
+	}
+	if (!dstFlag) {//不是主机路径，可以自动补全
+		dst = cmpPath(dst);//自动补齐路径
+	}
+
 	string contents;
 	//取出文件中的内容
 	if (srcFlag) {//源文件在主机上
@@ -312,6 +359,7 @@ void FileSystem::copy(string src, string dst) {//复制文件
 		srcFile.seekg(0, std::ios::beg);
 		srcFile.read(&contents[0], contents.size());//读入文件信息
 		srcFile.close();
+		contents = UTF8ToGB(contents.c_str());
 	}
 	else {//源文件在simdisk上
 		contents=getFileContent(getFileInode(src));//直接获取

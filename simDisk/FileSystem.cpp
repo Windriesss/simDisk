@@ -9,6 +9,8 @@
 using namespace std;
 
 FileSystem::FileSystem() {
+	inodeBMap.reset();
+	blockBMap.reset();
 	FILE.open("VirtualDisk", ios::binary | ios::in);//试试看有无虚拟硬盘
 	if (!FILE) {
 		cout << "未发现虚拟硬盘，创建虚拟硬盘" << endl;
@@ -26,8 +28,10 @@ FileSystem::FileSystem() {
 
 void FileSystem::init() {
 	cout << "正在创建文件系统 ..." << endl;
-	FILE.close();//不管有没打开，先关闭
-	FILE.open("VirtualDisk", ios::binary | ios::in | ios::out);
+	if (FILE) {
+		FILE.close();//如果打开了就关闭，换一种方式打开
+	}
+	FILE.open("VirtualDisk", ios::binary|ios::out);//只写方式才会创建新的文件
 	if (!FILE) {
 		cerr << "创建虚拟磁盘失败!" << endl;
 		return;
@@ -36,9 +40,7 @@ void FileSystem::init() {
 	S.diskSize = 100 * 1024 * 1024;//磁盘容量，单位B  100*1024*1024B
 	S.blockSize = 1024;//磁盘块容量，单位B 1024B
 	S.blockNum = S.diskSize / S.blockSize;//磁盘块总数 diskSize/bolckSize 102400块
-	S.blockUsedNum = 1 + 1 + 2048 + 13;//已使用的磁盘块数
 	S.inodeNum = 8192;//i节点总数
-	S.inodeUsedNum = 1;//已使用的i节点数
 	S.inodeBMapPos = 1 * S.blockSize;//i节点位图地址,即第几个字节开始，用1块来做i节点位图，即共可存放8192个文件或文件夹
 	S.inodePos = 2 * S.blockSize;//i节点区,第个字节开始是i结点区
 	S.blockBMapPos = 2050 * S.blockSize;//块位图地址,即第几个字节开始，用13(12.5)个连续的数据块做块位图  
@@ -105,6 +107,8 @@ void FileSystem::init() {
 		FILE.write((char*)&t, sizeof(inode));
 	}
 	FILE.flush();
+	FILE.close();
+	FILE.open("VirtualDisk", ios::binary | ios::out|ios::in);
 	return;
 }
 
@@ -118,12 +122,9 @@ void FileSystem::load() {
 	FILE.read((char*)&inodeBMap, sizeof(inodeBMap));
 	FILE.seekg(S.blockBMapPos, ios::beg);//读block位图
 	FILE.read((char*)&blockBMap, sizeof(blockBMap));
-	curInode = new inode;
 	FILE.seekg(S.inodePos, ios::beg);//读根目录i结点
-	FILE.read((char*)curInode, sizeof(inode));//读根目录的inode
-	curPos = -1;//没有开始读写
-	strcpy_s(curPath, 512, curInode->name);//当前路径
-	inodeStack.push_back(curInode);//把根目录的i结点号加入到路径i节点栈中
+	inodeStack.clear();//清空inode栈;
+	inodeStack.push_back(getInode(0));//把根目录的i结点号加入到路径i节点栈中
 }
 
 int FileSystem::RequestI() {
@@ -248,6 +249,7 @@ int FileSystem::getParentDirIndex(string path) {
 		curInode = getInode(curInodeIdx);
 	}
 	else if (pathSplit[0] == "."|| pathSplit[0] == "..") {
+		updateInodeStack();//更新工作i节点栈
 		curInodeIdx = inodeStack.back()->idx;//工作目录的最后一个
 		curInode = inodeStack.back();
 		if (pathSplit[0] == "..") {
@@ -372,6 +374,34 @@ string FileSystem::getFileContent(inode* fileInode) {
 	return ret;
 }
 
+void FileSystem::checkHelp(int idx, bitset<8192>& newInodeBMap, bitset<100 * 1024>& newBlockBMap) {//递归check
+	inode* fileInode = getInode(idx);
+	if (newInodeBMap[fileInode->idx]) {//已经判断过了
+		return;
+	}
+	newInodeBMap.set(fileInode->idx);
+	for (int i = 0; i < 10; ++i) {
+		if (newBlockBMap[fileInode->dataBlock[i]]) {//已经分配了
+			char buf[1024];
+			FILE.seekg(fileInode->dataBlock[i] * S.blockSize, ios::beg);//移到指定数据库，准备读数据
+			FILE.read(buf, S.blockSize);
+			int* newBlockIdx=new int;
+			RequestD(newBlockIdx, 1);
+			FILE.seekp(*newBlockIdx * S.blockSize, ios::beg);
+			fileInode->dataBlock[i] = *newBlockIdx;
+			postInode(fileInode);
+		}
+		else {
+			newBlockBMap.set(fileInode->dataBlock[i]);
+		}
+	}
+	if (fileInode->type == '0') {//如果是文件夹类型，把其下的文件也全部判断一遍
+		for (int i = 0; i < fileInode->size; ++i) {
+			DirectoryItem* dItem = getDirectorItem(fileInode, i);
+			checkHelp(dItem->inodeIdx,newInodeBMap,newBlockBMap);
+		}
+	}
+}
 int FileSystem::dirFindByName(inode* dirInode,string name) {
 	if (!FILE) {
 		cerr << "dirFindByName()调用前没有打开文件！终止！" << endl;
@@ -519,6 +549,26 @@ int FileSystem::fwriteHelp(inode* fileInode, string content, bool appFlag = 1) {
 	return 0;
 }
 
+void FileSystem::makeTrouble() {
+	srand(int(time(0)));
+	cout << "将以下i节点号分配给空气:";
+	for (int i = 0; i < 5; ++i) {
+		int t = rand() % 8000 + 1000;
+		cout << t << ' ';
+		inodeBMap.set(t);
+	}
+	cout << endl;
+	cout << "将以下数据块分配给空气:";
+	for (int i = 0; i < 5; ++i) {
+		int t = rand() % 80000 +20000;
+		cout << t << ' ';
+		blockBMap.set(t);
+	}
+	cout << endl;
+	return;
+
+}
+
 void FileSystem::save() {
 	if (!FILE) {
 		cerr << "save()调用时未打开文件！终止！" << endl;
@@ -532,11 +582,6 @@ void FileSystem::save() {
 	FILE.flush();
 }
 
-void FileSystem::print() {
-	S.print();
-	curInode->print();
-	cout << "当前工作路径：" << curPath << endl;
-}
 
 vector<string> FileSystem::split(string str, const string& t) {
 	vector<string> ret;
@@ -640,8 +685,13 @@ void FileSystem::getcmd(string cmd) {
 		copy($[1], $[2]);
 	}
 	else if ($[0] == "help") {
-		help()
-
+		help();
+	}
+	else if ($[0] == "check") {
+		check();
+	}
+	else if ($[0] == "makeTrouble") {
+		makeTrouble();
 	}
 	else {
 		cout << "未识别的命令，请重新输入！" << endl;
@@ -654,4 +704,24 @@ string FileSystem::cmpPath(string path) {
 	if (path[0] == '.' || path[0] == '/')
 		return path;
 	return "./" + path;
+}
+
+string FileSystem::UTF8ToGB(const char* str){//从host复制文本文件，编码格式不对
+	string result;
+	WCHAR* strSrc;
+	LPSTR szRes;
+
+	int i = MultiByteToWideChar(CP_UTF8, 0, str, -1, NULL, 0);
+	strSrc = new WCHAR[i + 1];
+	MultiByteToWideChar(CP_UTF8, 0, str, -1, strSrc, i);
+
+	i = WideCharToMultiByte(CP_ACP, 0, strSrc, -1, NULL, 0, NULL, NULL);
+	szRes = new CHAR[i + 1];
+	WideCharToMultiByte(CP_ACP, 0, strSrc, -1, szRes, i, NULL, NULL);
+
+	result = szRes;
+	delete[]strSrc;
+	delete[]szRes;
+
+	return result;
 }

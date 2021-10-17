@@ -19,9 +19,6 @@ public: //方便测试，实际使用需要关闭
 	bitset<100*1024> blockBMap; //13个block存  12.5*1024B
 	//----------------------------------------
 	fstream FILE;
-	int curPos;//当前读写指针所在位置
-	inode* curInode;//当前工作目录或文件的inode指针
-	char curPath[512];//当前路径
 	vector<inode*> inodeStack;//路径i节点栈
 
 public:
@@ -42,6 +39,7 @@ public:
 	string getWd();//获取工作路径字符串
 	string getFileContent(inode*);//获取文件信息
 	void updateInodeStack();//更新工作i节点栈
+	void checkHelp(int idx, bitset<8192>&, bitset<100 * 1024>&);//递归check
 	
 
 	//------------修改系统信息辅助函数------------
@@ -57,8 +55,7 @@ public:
 	int  fwriteHelp(inode*, string, bool);//帮助写入文件
 	
 	//-----------调试辅助函数-------------------
-	void print();//打印磁盘信息，调试用
-
+	void makeTrouble();//胡乱分配一些i节点和数据块
 	//------------主体函数---------------
 	void getcmd(string cmd);
 
@@ -75,6 +72,7 @@ public:
 	void cat(string);//显示文件内容
 	void del(string);//删除文件
 	void copy(string, string);//复制文件
+	void check();
 	void help();//命令帮助
 
 	
@@ -82,6 +80,7 @@ public:
 	string modInt2String(int);
 	vector<string> split(string, const string&);//分割字符串
 	string cmpPath(string);//自动补全路径
+	string UTF8ToGB(const char* str);//UTF8转GBK
 };
 
 #endif

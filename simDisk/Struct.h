@@ -75,9 +75,7 @@ struct SuperBlock {
 	int diskSize;//磁盘容量，单位B  100*1024*1024B
 	int blockSize;//磁盘块容量，单位B 1024B
 	int blockNum;//磁盘块总数 diskSize/bolckSize 102400块
-	int blockUsedNum;//已使用的磁盘块数
 	int inodeNum;//i节点总数
-	int inodeUsedNum;//已使用的i节点数
 	int inodeBMapPos;//i节点位图地址,即第个字节开始，用1块来做i节点位图，即共可存放8192个文件或文件夹
 	int inodePos;//i节点区,第几个字节开始是i结点区
 	int blockBMapPos;//块位图地址,即第几个字节开始，用13(12.5)个连续的数据块做块位图  
@@ -85,13 +83,11 @@ struct SuperBlock {
 	void print() {
 		cout << "\t磁盘容量:\t\t" << diskSize/1024/1024<<"MB" << endl;
 		cout << "\t磁盘块总数:\t\t" << blockNum<<"块" << endl;
-		cout << "\t已使用的磁盘块数:\t" << blockUsedNum<<"块" << endl;
 		cout << "\ti节点总数:\t\t" << inodeNum << endl;
-		cout << "\t已使用的i节点数:\t" << inodeUsedNum << endl;
-		cout << "\ti节点位图地址:\t\t" << inodeBMapPos/1024 << endl;
-		cout << "\ti节点区:\t\t" << inodePos << endl;
-		cout << "\t块位图地址:\t\t" << blockBMapPos/1024 << endl;
-		cout << "\t数据块地址:\t\t" << blockPos << endl;
+		cout << "\ti节点位图起始地址:\t" << inodeBMapPos/1024 << endl;
+		cout << "\ti节点区起始地址:\t" << inodePos/1024 << endl;
+		cout << "\t块位图起始地址:\t\t" << blockBMapPos/1024 << endl;
+		cout << "\t数据块起始地址:\t\t" << blockPos / 1024 << endl;
 	}
 };
 
