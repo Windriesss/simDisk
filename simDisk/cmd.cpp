@@ -396,12 +396,13 @@ void FileSystem::help()
 	cout <<  "\t┃ 5. rd        path            删除目录           ┃" << endl;
 	cout <<  "\t┃ 6. newfile   path            建立文件           ┃" << endl;
 	cout <<  "\t┃ 7. cat       path            打开文件           ┃" << endl;
-	cout <<  "\t┃ 8. copy      src dst         拷贝文件           ┃" << endl;
+	cout <<  "\t┃ 8. copy      src    dst      拷贝文件           ┃" << endl;
 	cout <<  "\t┃ 9. del       path            删除文件           ┃" << endl;
 	cout <<  "\t┃ 10.check                     检测并恢复文件系统 ┃" << endl;
 	cout <<  "\t┃ 11.format                    格式化磁盘         ┃" << endl;
 	cout <<  "\t┃ 12.fwrite    path appFlag    写文件             ┃" << endl;
 	cout <<  "\t┃ 13.ctrl+z                    退出文件系统       ┃" << endl;
 	cout <<  "\t┃ 14.help                      显示帮助           ┃" << endl;
+	cout <<  "\t┃ 15.exit                      退出文件系统       ┃" << endl;
 	cout <<  "\t┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" << endl;
 }

@@ -693,6 +693,9 @@ void FileSystem::getcmd(string cmd) {
 	else if ($[0] == "makeTrouble") {
 		makeTrouble();
 	}
+	else if ($[0] == "exit") {
+		exit(0);
+	}
 	else {
 		cout << "未识别的命令，请重新输入！" << endl;
 	}
