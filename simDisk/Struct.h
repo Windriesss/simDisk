@@ -83,15 +83,15 @@ struct SuperBlock {
 	int blockBMapPos;//块位图地址,即第几个字节开始，用13(12.5)个连续的数据块做块位图  
 	int blockPos;//数据块地址，即第几个字节开始
 	void print() {
-		cout << "磁盘容量:" << diskSize/1024/1024<<"MB" << endl;
-		cout << "磁盘块总数:" << blockNum<<"块" << endl;
-		cout << "已使用的磁盘块数:" << blockUsedNum<<"块" << endl;
-		cout << "i节点总数:" << inodeNum << endl;
-		cout << "已使用的i节点数:" << inodeUsedNum << endl;
-		cout << "i节点位图地址:" << inodeBMapPos << endl;
-		cout << "i节点区:" << inodePos << endl;
-		cout << "块位图地址:" << blockBMapPos << endl;
-		cout << "数据块地址:" << blockPos << endl;
+		cout << "\t磁盘容量:\t\t" << diskSize/1024/1024<<"MB" << endl;
+		cout << "\t磁盘块总数:\t\t" << blockNum<<"块" << endl;
+		cout << "\t已使用的磁盘块数:\t" << blockUsedNum<<"块" << endl;
+		cout << "\ti节点总数:\t\t" << inodeNum << endl;
+		cout << "\t已使用的i节点数:\t" << inodeUsedNum << endl;
+		cout << "\ti节点位图地址:\t\t" << inodeBMapPos/1024 << endl;
+		cout << "\ti节点区:\t\t" << inodePos << endl;
+		cout << "\t块位图地址:\t\t" << blockBMapPos/1024 << endl;
+		cout << "\t数据块地址:\t\t" << blockPos << endl;
 	}
 };
 

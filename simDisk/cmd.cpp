@@ -13,6 +13,7 @@ void FileSystem::format() {//格式化硬盘
 		cout << "正在初始化磁盘，请稍等......" << endl;
 		init();
 		load();
+
 	}
 	else if (ch == 'N' || ch == 'n') {
 		return;
@@ -38,13 +39,14 @@ void FileSystem::info() {
 		}
 	}
 	S.print();
-	cout << "磁盘剩余空间：" << freeSpace << "MB" << endl;
-	cout << "空闲创建inode数：" << freeInode << endl;
-	cout << "总目录数：" << dirNum << endl;
-	cout << "总文件数：" << fileNum << endl;
+	cout << "\t磁盘剩余空间:\t\t" << freeSpace << "MB" << endl;
+	cout << "\t空闲创建inode数:\t" << freeInode << endl;
+	cout << "\t总目录数:\t\t" << dirNum << endl;
+	cout << "\t总文件数:\t\t" << fileNum << endl;
 }
 
 void FileSystem::md(string path) {
+	path = cmpPath(path);
 	if (!FILE) {
 		cerr << "md()" << "打开磁盘失败！" << endl;
 	}
@@ -69,6 +71,7 @@ void FileSystem::md(string path) {
 }
 
 void FileSystem::dir(string path) {
+	path = cmpPath(path);
 	if (!FILE) {
 		cerr << "dir()" << "打开磁盘失败！" << endl;
 	}
@@ -94,6 +97,7 @@ void FileSystem::dir(string path) {
 }
 
 void FileSystem::cd(string path) {
+	path = cmpPath(path);//自动补齐路径
 	if (getIndex(path) == -1) {
 		cerr << "路径不存在！终止命令！" << endl;
 		return;
@@ -152,6 +156,7 @@ void FileSystem::pwd() {
 }
 
 void FileSystem::rd(string path) {
+	path = cmpPath(path);//自动补齐路径
 	int dirInodeIdx=getIndex(path);
 	if (dirInodeIdx == -1) {
 		cerr <<'"'<<path<<'"' << "不存在！rd()调用终止！" << endl;
@@ -183,4 +188,172 @@ void FileSystem::rd(string path) {
 		}
 	}
 	return;
+}
+
+inode* FileSystem::newfile(string path) {
+	path = cmpPath(path);//自动补齐路径
+	int parentInodeIdx=getParentDirIndex(path);//找到路径中的父目录
+	inode* parentInode = getInode(parentInodeIdx);
+	if (parentInodeIdx < 0) {
+		cerr << "newfile()路径错误！终止命令！" << endl;
+		return NULL;
+	}
+	vector<string> pathSplit=split(path,"/");
+	string fileName = pathSplit.back();
+	int findNameFlag=dirFindByName(parentInode, fileName);
+	if (findNameFlag != -1) {
+		cout << "该目录下已经存在名称为" << fileName << "的文件或目录！终止命令!" << endl;
+		return NULL;
+	}
+
+
+	//申请i节点
+	int newInodeIdx = RequestI();
+	inode* newInode = getInode(newInodeIdx);
+	//给这个i节点申请数据块
+	int flag=RequestD(newInode->dataBlock, 10);//申请10个硬盘块
+	//如果失败，报错，释放i节点
+	if (flag < 0) {
+		delI(newInode);
+	}
+	//i节点和数据块都申请成功，修改i节点信息
+	newInode->idx=newInodeIdx;//inode序号
+	newInode->parentIdx=parentInodeIdx;//父目录的inode序号
+	newInode->linkNum=1;//指向该inode的文件数
+	newInode->uid=0;//所属用户id
+	newInode->gid=10000;//所属组id
+	newInode->mod=777;//保护模式
+	strcpy_s(newInode->name,136,fileName.c_str());//文件名
+	newInode->type='1';//文件类型  0表示目录  1表示文件
+	GetLocalTime(&(newInode->creatTime));//创建时间  16B
+	newInode->modiTime=newInode->creatTime;//最后一次修改时间
+	newInode->size=0;//文件大小 单位B
+	//数据块已经申请好了,不需要额外处理
+
+	//回存i节点
+	postInode(newInode);
+	//回存目录项
+	postDirItem(parentInode, newInode);
+	return newInode;
+}
+
+void FileSystem::fwrite(string path, bool appFlag = 1) {
+	path = cmpPath(path);//自动补齐路径
+	//提取路径所指i节点
+	inode* fileInode = getInode(getIndex(path));
+	if (fileInode == NULL) {
+		cerr << "fwrite()路径查找错误！终止！" << endl;
+		return;
+	}
+	//判断inode是否是文件类型
+	if (fileInode->type != '1') {
+		cerr << "该路径所指类型不是文件类型！终止！" << endl;
+		return;
+	}
+	if (appFlag) {//以追加模式写文件，先把原文件的内容打印出来
+		cout << "原文件内容：" <<endl<<getFileContent(fileInode) << endl;//显示文件内容
+		cout << "请输入追加的文件内容：(输入回车+(ctrl+z)结束)" << endl;
+	}
+	else {
+		cout << "请输入写入文件内容：(输入回车+(ctrl+z)结束)" << endl;
+	}
+	string content;
+	char ch;
+	while ((ch=getchar())!=EOF) {
+		content += ch;
+	}
+	content.erase(content.size() - 1);//擦去最后一个换行符
+	if (fwriteHelp(fileInode, content, appFlag) < 0) {
+		cerr << "保存文件错误!" << endl;
+		return;
+	}
+	else {
+		cout << "保存成功！" << endl;
+	}
+}
+
+void FileSystem::cat(string path) {
+	path = cmpPath(path);//自动补齐路径
+	inode* fileInode = getFileInode(path);
+	cout << getFileContent(fileInode) << endl;
+	return;
+}
+
+void FileSystem::del(string path) {
+	path = cmpPath(path);//自动补齐路径
+	inode* fileInode = getFileInode(path);//这一步可以保证取出来的是文件
+	if (fileInode == NULL) {
+		cerr << "路径有误！del命令终止！" << endl;
+		return;
+	}
+	delI(fileInode);
+	return;
+}
+
+void FileSystem::copy(string src, string dst) {//复制文件
+	bool srcFlag = 0, dstFlag = 0;//是否在主机磁盘上，是的话置1
+	if (src.size() >= 6 && src.substr(0, 6) == "<host>") {
+		srcFlag = 1;
+	}
+	if (dst.size() >= 6 && dst.substr(0, 6) == "<host>") {
+		dstFlag = 1;
+	}
+	string contents;
+	//取出文件中的内容
+	if (srcFlag) {//源文件在主机上
+		fstream srcFile(src.c_str() + 6,ios::binary|ios::in);//打开文件
+		if (!srcFile) {
+			cerr << "srcFile打开失败！终止！" << endl;
+			return;
+		}
+
+		srcFile.seekg(0, std::ios::end);
+		contents.resize(srcFile.tellg());//扩展contens大小
+		srcFile.seekg(0, std::ios::beg);
+		srcFile.read(&contents[0], contents.size());//读入文件信息
+		srcFile.close();
+	}
+	else {//源文件在simdisk上
+		contents=getFileContent(getFileInode(src));//直接获取
+	}
+	//写入文件内容
+	if (dstFlag) {//目标文件在主机上
+		fstream dstFile(dst.c_str() + 6, ios::binary | ios::out);
+		if (!dstFile) {
+			cerr << "dstFile打开失败！终止！" << endl;
+			return;
+		}
+		dstFile.seekp(0, ios::beg);
+		dstFile.write(&contents[0], contents.size());
+		return;
+	}
+	else {//目标文件在simdisk上
+		inode* newInode=newfile(dst);
+		if (newInode == NULL) {
+			cerr << "创建文件失败！终止！" << endl;
+			return;
+		}
+		fwriteHelp(newInode, contents, 0);
+	}
+	return;
+}
+
+void FileSystem::help()
+{
+	cout <<"\n\t┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓" << endl;
+	cout <<  "\t┃ 1. info                      显示系统信息       ┃" << endl;
+	cout <<  "\t┃ 2. cd        path            改变目录           ┃" << endl;
+	cout <<  "\t┃ 3. dir       path            显示目录           ┃" << endl;
+	cout <<  "\t┃ 4. md        path            创建目录           ┃" << endl;
+	cout <<  "\t┃ 5. rd        path            删除目录           ┃" << endl;
+	cout <<  "\t┃ 6. newfile   path            建立文件           ┃" << endl;
+	cout <<  "\t┃ 7. cat       path            打开文件           ┃" << endl;
+	cout <<  "\t┃ 8. copy      src dst         拷贝文件           ┃" << endl;
+	cout <<  "\t┃ 9. del       path            删除文件           ┃" << endl;
+	cout <<  "\t┃ 10.check                     检测并恢复文件系统 ┃" << endl;
+	cout <<  "\t┃ 11.format                    格式化磁盘         ┃" << endl;
+	cout <<  "\t┃ 12.fwrite    path appFlag    写文件             ┃" << endl;
+	cout <<  "\t┃ 13.ctrl+z                    退出文件系统       ┃" << endl;
+	cout <<  "\t┃ 14.help                      显示帮助           ┃" << endl;
+	cout <<  "\t┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" << endl;
 }
