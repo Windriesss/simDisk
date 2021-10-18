@@ -27,6 +27,8 @@ FileSystem::FileSystem() {
 }
 
 void FileSystem::init() {
+	inodeBMap.reset();
+	blockBMap.reset();
 	cout << "正在创建文件系统 ..." << endl;
 	if (FILE) {
 		FILE.close();//如果打开了就关闭，换一种方式打开

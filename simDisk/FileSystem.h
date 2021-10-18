@@ -77,7 +77,7 @@ public:
 
 	
 	//-------------其他辅助函数------------------------
-	string modInt2String(int);
+	string modInt2String(int);//获取保护模式
 	vector<string> split(string, const string&);//分割字符串
 	string cmpPath(string);//自动补全路径
 	string UTF8ToGB(const char* str);//UTF8转GBK
