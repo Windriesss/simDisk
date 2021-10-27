@@ -5,35 +5,89 @@
 #include <cstring>
 #include <iostream>
 #include <windows.h>
+#include<tchar.h>
 
 using namespace std;
 
-FileSystem::FileSystem() {
+FileSystem::FileSystem(int _uid) {
+	uid = _uid;
+	cout << uid;
 	inodeBMap.reset();
 	blockBMap.reset();
 	FILE.open("VirtualDisk", ios::binary | ios::in);//试试看有无虚拟硬盘
 	if (!FILE) {
-		cout << "未发现虚拟硬盘，创建虚拟硬盘" << endl;
+		outStr += "未发现虚拟硬盘，创建虚拟硬盘\n";
 		init();
 	}
 	FILE.close();
 	//-------------先把init调试好----------
 	FILE.open("VirtualDisk", ios::binary | ios::in | ios::out);
 	if (!FILE) {
-		cerr << "FileSystem打开虚拟硬盘失败！" << endl;
+		outStr += "FileSystem打开虚拟硬盘失败！\n";
 		return;
 	}
 	load();//读磁盘状态
+
+	//-------------打开通信文件、信号量-----------
+	haccessTable = OpenFileMapping(FILE_MAP_ALL_ACCESS, TRUE, TEXT("accessTable"));//打开文件映射
+	if (haccessTable == NULL) {
+		cout << "accessTable打开失败！" << endl;
+		Sleep(3000);
+		return;
+	}
+	accessTable = (AccessTable*)MapViewOfFile(haccessTable, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0);//打开文件映射
+	mutex= OpenSemaphore(SEMAPHORE_ALL_ACCESS, TRUE, TEXT("Mutex"));
+
+	if (uid == 0) {
+		shell = OpenSemaphore(SEMAPHORE_ALL_ACCESS, TRUE, TEXT("shell0"));
+		disk = OpenSemaphore(SEMAPHORE_ALL_ACCESS, TRUE, TEXT("disk0"));
+		hFile = OpenFileMapping(FILE_MAP_ALL_ACCESS, TRUE, TEXT("file0"));//打开文件映射
+	}
+	else if (uid == 1) {
+		shell = OpenSemaphore(SEMAPHORE_ALL_ACCESS, TRUE, TEXT("shell1"));
+		disk = OpenSemaphore(SEMAPHORE_ALL_ACCESS, TRUE, TEXT("disk1"));
+		hFile = OpenFileMapping(FILE_MAP_ALL_ACCESS, TRUE, TEXT("file1"));//打开文件映射
+	}
+	else if (uid == 2) {
+		shell = OpenSemaphore(SEMAPHORE_ALL_ACCESS, TRUE, TEXT("shell2"));
+		disk = OpenSemaphore(SEMAPHORE_ALL_ACCESS, TRUE, TEXT("disk2"));
+		hFile = OpenFileMapping(FILE_MAP_ALL_ACCESS, TRUE, TEXT("file2"));//打开文件映射
+	}
+	if (shell==NULL || disk==NULL) {
+		cout << "专属shell、disk通信句打开失败！" << endl;
+		Sleep(3000);
+		return;
+	}
+	if (hFile == NULL)
+	{
+		cout << "创建专属映射文件失败" << endl;
+		Sleep(3000);
+		return ;
+	}
+	file = (File*)MapViewOfFile(hFile, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0);//信息传递文件
+
+
+}
+
+void FileSystem::updateBMap() {
+	FILE.seekg(0, ios::beg);//读超级块
+	FILE.read((char*)&S, sizeof(S));
+	FILE.seekg(S.inodeBMapPos, ios::beg);//读inode位图
+	FILE.read((char*)&inodeBMap, sizeof(inodeBMap));
+	FILE.seekg(S.blockBMapPos, ios::beg);//读block位图
+	FILE.read((char*)&blockBMap, sizeof(blockBMap));
 }
 
 void FileSystem::init() {
-	cout << "正在创建文件系统 ..." << endl;
+	inodeBMap.reset();
+	blockBMap.reset();
+	outStr += "正在创建文件系统 ...\n";
 	if (FILE) {
 		FILE.close();//如果打开了就关闭，换一种方式打开
 	}
 	FILE.open("VirtualDisk", ios::binary|ios::out);//只写方式才会创建新的文件
 	if (!FILE) {
-		cerr << "创建虚拟磁盘失败!" << endl;
+		outStr += "创建虚拟磁盘失败!\n";
 		return;
 	}
 	//------------初始化超级块------------
@@ -114,7 +168,8 @@ void FileSystem::init() {
 
 void FileSystem::load() {
 	if (!FILE) {
-		cerr << "load()" << "打开磁盘失败！" << endl;
+		outStr += "load()";
+		outStr += "打开磁盘失败！\n";
 	}
 	FILE.seekg(0, ios::beg);//读超级块
 	FILE.read((char*)&S, sizeof(S));
@@ -147,7 +202,7 @@ int FileSystem::RequestD(int* t, int n) {
 		}
 	}
 	if (i == S.blockNum) {//内存不够
-		cerr << "RequestD()错误！数据块不足！" << endl;
+		outStr += "RequestD()错误！数据块不足！\n";
 		return -1;//内存不足，返回错误
 	}
 	for (i = 0; i < n; ++i) {//确保有足够多的数据块才一次申请
@@ -209,11 +264,13 @@ void FileSystem::delD(int* dataBlock, int n) {
 inode* FileSystem::getInode(int idx) {//根据i节点号返回i节点的指针
 	//调用这个函数前必须先打开文件
 	if (!FILE) {
-		cerr << "getInode()调用前没有打开文件！终止！" << endl;
+		outStr += "getInode()调用前没有打开文件！终止！\n";
 		return NULL;
 	}
 	if (idx < 0 || idx >= 8192) {
-		cerr << "getInode()错误！i结点序号超出范围！输入的i结点号为："<<idx<<endl;
+		outStr += "getInode()错误！i结点序号超出范围！输入的i结点号为：\n";
+		outStr += idx;
+		outStr += '\n';
 		return NULL;
 	}
 	inode* ret = new inode();
@@ -225,12 +282,12 @@ inode* FileSystem::getInode(int idx) {//根据i节点号返回i节点的指针
 inode* FileSystem::getFileInode(string path) {
 	inode* fileInode = getInode(getIndex(path));
 	if (fileInode == NULL) {
-		cerr << "getFileInode()路径查找错误！终止！" << endl;
+		outStr += "getFileInode()路径查找错误！终止！\n";
 		return NULL;
 	}
 	//判断inode是否是文件类型
 	if (fileInode->type != '1') {
-		cerr << "该路径所指类型不是文件类型！终止！" << endl;
+		outStr += "该路径所指类型不是文件类型！终止！\n" ;
 		return NULL;
 	}
 	return fileInode;
@@ -238,7 +295,7 @@ inode* FileSystem::getFileInode(string path) {
 
 int FileSystem::getParentDirIndex(string path) {
 	if (path.empty()) {
-		cerr << "getParentDirIndex()错误，路径为空！" << endl;
+		outStr += "getParentDirIndex()错误，路径为空！\n";
 		return -1;
 	}
 	vector<string> pathSplit = split(path,"/");
@@ -254,28 +311,32 @@ int FileSystem::getParentDirIndex(string path) {
 		curInode = inodeStack.back();
 		if (pathSplit[0] == "..") {
 			if (inodeStack.size() <= 1) {
-				cout << "getParentDirIndex()错误！没有上一级目录！终止！" << endl;
+				outStr += "getParentDirIndex()错误！没有上一级目录！终止！\m";
+				return -1;
 			}
 			curInodeIdx = curInode->parentIdx;//该工作目录的上一层
 			curInode = inodeStack[inodeStack.size() - 2];
 		}
 	}
 	else {//错误输入
-		cerr << "getParentDirIndex()错误，路径输入错误！" << endl;
+		outStr += "getParentDirIndex()错误，路径输入错误！\n";
 		return -1;//错误
 	}
 
 	for (int i = 1; i < pathSplit.size()-1; ++i) {//留一级不取
 		curInodeIdx = dirFindByName(curInode, pathSplit[i]);//取下一级目录的i节点号
 		if (curInodeIdx < 0) {
-			cout << "getParentDirIndex()错误!";
-			cout << curInode->name << "中没有名字为" << pathSplit[i] << "的文件或目录" << endl;
+			outStr += "getParentDirIndex()错误!";
+			outStr += curInode->name;
+			outStr += "中没有名字为";
+			outStr += pathSplit[i];
+			outStr += "的文件或目录\n";
 			return -1;
 		}
 		else curInode = getInode(curInodeIdx);//取i节点
 	}
 	if (curInode->type != '0') {
-		cerr << "getParentDirIndex()调用错误！该路径的上一级不是文件夹！" << endl;
+		outStr += "getParentDirIndex()调用错误！该路径的上一级不是文件夹！\n";
 		return -1;
 	}
 	return curInodeIdx;
@@ -290,14 +351,14 @@ int FileSystem::getIndex(string path) {
 	}
 	if (path == "..") {
 		if (inodeStack.size() <= 1) {
-			cerr << "getIndex()错误！没有上一级目录！" << endl;
+			outStr += "getIndex()错误！没有上一级目录！\n";
 			return -1;
 		}
 		else return inodeStack[inodeStack.size() - 2]->idx;
 	}
 	int parentInodeIdx=getParentDirIndex(path);//取其父目录的i结点号
 	if (parentInodeIdx == -1) {
-		cerr << "getDirIndx()错误！终止命令！" << endl;
+		outStr += "getDirIndx()错误！终止命令！\n";
 		return -1;
 	}
 	inode* parentInode = getInode(parentInodeIdx);//取其父目录
@@ -309,11 +370,11 @@ int FileSystem::getIndex(string path) {
 
 DirectoryItem* FileSystem::getDirectorItem(inode* dirInode, int idx) {//取文件夹中的第idx项
 	if (dirInode->type != '0') {
-		cerr << "getDirectorItem()错误，该文件不是文件夹类型" << endl;
+		outStr += "getDirectorItem()错误，该文件不是文件夹类型\n";
 		return NULL;
 	}
 	if (dirInode->size < idx - 1) {
-		cerr << "getDirectorItem()错误，索引超出目录项索引" << endl;
+		outStr += "getDirectorItem()错误，索引超出目录项索引\n";
 		return NULL;
 	}
 	int blockNum = idx / 7;//在第几个数据块
@@ -330,7 +391,7 @@ string FileSystem::getMod(inode* fileNode) {
 
 void FileSystem::updateInodeStack() {
 	if (!FILE) {
-		cerr << "updateInodeStack()调用前没有打开FILE！请注意！" << endl;
+		outStr += "updateInodeStack()调用前没有打开FILE！请注意！\n";
 		return;
 	}
 	int len = inodeStack.size();
@@ -356,7 +417,7 @@ string FileSystem::getWd() {
 string FileSystem::getFileContent(inode* fileInode) {
 	string ret;
 	if (fileInode == NULL) {
-		cerr << "getFileContent()传入了空节点！终止！" << endl;
+		outStr += "getFileContent()传入了空节点！终止！\n";
 		return ret;
 	}
 	char buf[1025];
@@ -404,7 +465,7 @@ void FileSystem::checkHelp(int idx, bitset<8192>& newInodeBMap, bitset<100 * 102
 }
 int FileSystem::dirFindByName(inode* dirInode,string name) {
 	if (!FILE) {
-		cerr << "dirFindByName()调用前没有打开文件！终止！" << endl;
+		outStr += "dirFindByName()调用前没有打开文件！终止！\n" ;
 		return -1;
 	}
 	int FileNum = dirInode->size;//该文件夹总共有多少个文件
@@ -423,7 +484,7 @@ int FileSystem::dirFindByName(inode* dirInode,string name) {
 
 void FileSystem::postInode(inode* i) {
 	if (!FILE) {
-		cerr << "postInode()调用时未打开文件！终止！" << endl;
+		outStr += "postInode()调用时未打开文件！终止！\n";
 		return;
 	}
 	FILE.seekp(S.inodePos + i->idx * sizeof(inode), ios::beg);
@@ -431,36 +492,40 @@ void FileSystem::postInode(inode* i) {
 	FILE.flush();
 }
 
-void FileSystem::postDirItem(inode* parentInode, inode* insertInode) {
+void FileSystem::postDirItem(inode*& parentInode, inode*& insertInode) {
 	//！！！一级间址还没做，判断不完整
 	if (parentInode->size > 70) {
-		cerr << "postDirItem()失败，父目录已满！" << endl;
+		outStr += "postDirItem()失败，父目录已满！\n";
 		return;
 	}
+	parentInode = getInode(parentInode->idx);//确保是最新状态
 	DirectoryItem* newDirItem = new DirectoryItem;//创建一个新的目录项，并且往里面填信息
 	newDirItem->inodeIdx = insertInode->idx;
 	strcpy_s(newDirItem->name, 136, insertInode->name);
 	newDirItem->type = insertInode->type;
-	
+
+	cout << parentInode->size;
 	int blockNum = parentInode->size / 7;//写在第几块数据块中
 	int deviation = parentInode->size % 7;//写在数据块的哪一项中
 	FILE.seekp(parentInode->dataBlock[blockNum] * S.blockSize + deviation * sizeof(DirectoryItem), ios::beg);//把指针移到该目录项存放的位置
 	FILE.write((char*)newDirItem, sizeof(DirectoryItem));//写入磁盘中
 	parentInode->size++;//目录项的数目加1
-
+	cout << parentInode->size;
+	FILE.flush();//及时计入，否则多进程会出现目录覆盖的问题
 	GetLocalTime(&(parentInode->modiTime));//更改父目录的修改时间
 	postInode(parentInode);//把父目录inode也写回磁盘中，直接同步
 	FILE.flush();
+	FILE.clear();
 	return;
 }
 
 void FileSystem::postDirItem(inode* parentInode, DirectoryItem* dirItem, int n) {
 	if (parentInode->size > 70) {
-		cerr << "postDirItem()失败，父目录已满！" << endl;
+		outStr += "postDirItem()失败，父目录已满！\n";
 		return;
 	}
 	if (n > parentInode->size) {
-		cerr << "postDirItem()失败，超出目录项大小!" << endl;
+		outStr += "postDirItem()失败，超出目录项大小！\n";
 		return;
 	}
 	int blockNum = n / 7;//写在第几块数据块中
@@ -479,11 +544,11 @@ void FileSystem::postDirItem(inode* parentInode, DirectoryItem* dirItem, int n) 
 void FileSystem::dirInit(inode* parentInode, string name) {
 	//！！！没有完整判断目录是否满
 	if (!FILE) {
-		cerr << "dirInit()调用前没有打开文件！终止！" << endl;
+		outStr += "dirInit()调用前没有打开文件！终止！\n";
 		return;
 	}
 	if (parentInode->size > 70) {
-		cerr << "dirInit()失败，父目录已满！" << endl;
+		outStr += "dirInit()失败，父目录已满！\n";
 		return;
 	}
 	int newDirInodeIdx=RequestI();//为该目录申请一个i节点
@@ -492,8 +557,8 @@ void FileSystem::dirInit(inode* parentInode, string name) {
 	newDirInode->idx = newDirInodeIdx;//自身的i节点号
 	newDirInode->parentIdx=parentInode->idx;//父目录的inode序号
 	newDirInode->linkNum=1;//指向该inode的文件数
-	newDirInode->uid=1;//所属用户id
-	newDirInode->gid=10000;//所属组id
+	newDirInode->uid=uid;//所属用户id
+	newDirInode->gid=10000+uid;//所属组id
 	newDirInode->mod=777;//保护模式
 	strcpy_s(newDirInode->name,136,name.c_str());//文件名
 	newDirInode->type='0';//文件类型  0表示目录  1表示文件
@@ -513,7 +578,7 @@ int FileSystem::fwriteHelp(inode* fileInode, string content, bool appFlag = 1) {
 	int preSize = fileInode->size;
 	if (appFlag) {//判断是否为追加模式
 		if (contentSize + preSize > 10 * 1024) {//判断是否超限
-			cerr << "追加后文件大小超出限制！停止写入！" << endl;
+			outStr += "追加后文件大小超出限制！停止写入！\n";
 			return -1;
 		}
 		else {
@@ -522,7 +587,7 @@ int FileSystem::fwriteHelp(inode* fileInode, string content, bool appFlag = 1) {
 	}
 	else {
 		if (contentSize > 10 * 1024) {
-			cerr << "写入文件的内容超限！停止写入！" << endl;
+			outStr += "写入文件的内容超限！停止写入！\n";
 			return -1;
 		}
 		else fileInode->size = contentSize;
@@ -551,27 +616,30 @@ int FileSystem::fwriteHelp(inode* fileInode, string content, bool appFlag = 1) {
 
 void FileSystem::makeTrouble() {
 	srand(int(time(0)));
-	cout << "将以下i节点号分配给空气:";
+	outStr += "将以下i节点号分配给空气:";
 	for (int i = 0; i < 5; ++i) {
 		int t = rand() % 8000 + 1000;
-		cout << t << ' ';
+		outStr += to_string(t);
+		outStr += ' ';
 		inodeBMap.set(t);
 	}
-	cout << endl;
-	cout << "将以下数据块分配给空气:";
+	outStr += '\n';
+	outStr += "将以下数据块分配给空气:";
 	for (int i = 0; i < 5; ++i) {
 		int t = rand() % 80000 +20000;
-		cout << t << ' ';
+		outStr += to_string(t);
+		outStr += ' ';
 		blockBMap.set(t);
 	}
-	cout << endl;
+	outStr += '\n';
+	save();
 	return;
 
 }
 
 void FileSystem::save() {
 	if (!FILE) {
-		cerr << "save()调用时未打开文件！终止！" << endl;
+		outStr += "save()调用时未打开文件！终止！\n" ;
 	}
 	FILE.seekp(0, ios::beg);//写超级块
 	FILE.write((char*)&S, sizeof(S));
@@ -610,6 +678,9 @@ string FileSystem::modInt2String(int mod) {
 }
 
 void FileSystem::getcmd(string cmd) {
+	updateBMap();//每次都更新位图节点工作栈
+	updateInodeStack();//每次都更新i节点工作栈
+	outStr.clear();
 	if (cmd == "") return;
 	vector<string> $ = split(cmd, " ");
 	if ($[0] == "format") {
@@ -620,7 +691,8 @@ void FileSystem::getcmd(string cmd) {
 	}
 	else if ($[0] == "md") {
 		if ($.size() < 2) {
-			cout << "输入的参数不足，请输入：md path" << endl;
+			outStr += "输入的参数不足，请输入：md path\n";
+			file->errorFlag = -1;
 			return;
 		}
 		md($[1]);
@@ -634,7 +706,8 @@ void FileSystem::getcmd(string cmd) {
 	}
 	else if ($[0] == "cd") {
 		if ($.size() < 2) {
-			cout << "输入的参数不足，请输入：cmd path" << endl;
+			outStr+= "输入的参数不足，请输入：cmd path\n";
+			file->errorFlag = -1;
 			return;
 		}
 		cd($[1]);
@@ -644,42 +717,56 @@ void FileSystem::getcmd(string cmd) {
 	}
 	else if ($[0] == "rd") {
 		if ($.size() < 2) {
-			cout << "输入的参数不足，请输入：rd path" << endl;
+			outStr += "输入的参数不足，请输入：rd path\n";
+			file->errorFlag = -1;
 			return;
 		}
 		rd($[1]);
 	}
 	else if ($[0] == "newfile") {
 		if ($.size() < 2) {
-			cout << "输入的参数不足，请输入：newfile path" << endl;
+			outStr += "输入的参数不足，请输入：newfile path\n";
+			file->errorFlag = -1;
 			return;
 		}
 		newfile($[1]);
 	}
 	else if ($[0] == "fwrite") {
-		if ($.size() < 2) {
-			cout << "输入的参数不足，请输入：fwrite path appFlag" << endl;
+		if ($.size() < 3) {
+			outStr += "输入的参数不足，请输入：fwrite path appFlag\n";
+			file->errorFlag = -1;
 			return;
 		}
 		fwrite($[1], atoi($[2].c_str()));
 	}
 	else if ($[0] == "cat") {
 		if ($.size() < 2) {
-			cout << "输入的参数不足，请输入：cat path" << endl;
+			outStr += "输入的参数不足，请输入：cat path\n";
+			file->errorFlag = -1;
 			return;
 		}
 		cat($[1]);
 	}
 	else if ($[0] == "del") {
 		if ($.size() < 2) {
-			cout << "输入的参数不足，请输入：del path" << endl;
+			outStr += "输入的参数不足，请输入：del path\n";
+			file->errorFlag = -1;
 			return;
 		}
 		del($[1]);
 	}
+	else if ($[0] == "chmod") {
+		if ($.size() < 3) {
+			outStr += "输入的参数不足，请输入：chmod path mod\n";
+			file->errorFlag = -1;
+			return;
+		}
+		chmod($[1], atoi($[2].c_str()));
+	}
 	else if ($[0] == "copy") {
 		if ($.size() < 3) {
-			cout << "输入的参数不足，请输入：copy srcPath dstPath" << endl;
+			outStr += "输入的参数不足，请输入：copy srcPath dstPath\n";
+			file->errorFlag = -1;
 			return;
 		}
 		copy($[1], $[2]);
@@ -697,7 +784,7 @@ void FileSystem::getcmd(string cmd) {
 		exit(0);
 	}
 	else {
-		cout << "未识别的命令，请重新输入！" << endl;
+		outStr += "未识别的命令，请重新输入！\n";
 	}
 }
 
@@ -727,4 +814,15 @@ string FileSystem::UTF8ToGB(const char* str){//从host复制文本文件，编码格式不对
 	delete[]szRes;
 
 	return result;
+}
+
+LPCWSTR FileSystem::stringToLPCWSTR(string orig)
+{
+	size_t origsize = orig.length() + 1;
+	const size_t newsize = 100;
+	size_t convertedChars = 0;
+	wchar_t* wcstring = (wchar_t*)malloc(sizeof(wchar_t) * (orig.length() - 1));
+	mbstowcs_s(&convertedChars, wcstring, origsize, orig.c_str(), _TRUNCATE);
+
+	return wcstring;
 }
