@@ -20,13 +20,20 @@ public: //方便测试，实际使用需要关闭
 	//----------------------------------------
 	fstream FILE;
 	vector<inode*> inodeStack;//路径i节点栈
+	int uid;
+	string outStr;
+
+	File* file;
+	AccessTable* accessTable;
+	HANDLE hFile, shell, disk, haccessTable, mutex;
 
 public:
-	FileSystem();
+	FileSystem(int);
 	//-----------系统设置函数---------------------
 	void init();//没有虚拟磁盘的话初始化虚拟磁盘
 	void load();//加载磁盘
 	void save();//保存磁盘信息，主要是把位图存回去
+	void updateBMap();
 
 	//-----------获取信息辅助函数-----------------注意，要在FILE打开的情况下才能使用
 	inode* getInode(int);//用i节点号取i节点
@@ -49,7 +56,7 @@ public:
 	void delD(int);//删除单个数据块
 	void delD(int*, int);//删除数据块数组
 	void postInode(inode*);//把该inode写回磁盘
-	void postDirItem(inode*, inode*);//插入一个新的目录项，第一个inode是父目录，第二个是子目录或文件的inode
+	void postDirItem(inode*&, inode*&);//插入一个新的目录项，第一个inode是父目录，第二个是子目录或文件的inode
 	void postDirItem(inode*, DirectoryItem*, int);//在inode*中插入一个目录项，目录项为DirItem,插在第i个位置
 	void dirInit(inode*, string);//在文件夹下添加新的文件夹
 	int  fwriteHelp(inode*, string, bool);//帮助写入文件
@@ -74,6 +81,7 @@ public:
 	void copy(string, string);//复制文件
 	void check();
 	void help();//命令帮助
+	void chmod(string, int);//改变文件保护权限
 
 	
 	//-------------其他辅助函数------------------------
@@ -81,6 +89,7 @@ public:
 	vector<string> split(string, const string&);//分割字符串
 	string cmpPath(string);//自动补全路径
 	string UTF8ToGB(const char* str);//UTF8转GBK
+	LPCWSTR stringToLPCWSTR(string orig);//String 转LPCWSTR
 };
 
 #endif

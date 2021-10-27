@@ -5,7 +5,7 @@ VisualStudioVersion = 16.0.31624.102
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "simDisk", "simDisk\simDisk.vcxproj", "{CF68E80F-BEEE-41CC-AEC2-9300C9971165}"
 EndProject
-Project("{54435603-DBB4-11D2-8724-00A0C9A8B90C}") = "design1", "design1\design1.vdproj", "{A9502716-7FA8-4D57-A4BA-D73ABD397D75}"
+Project("{54435603-DBB4-11D2-8724-00A0C9A8B90C}") = "mainOutpu", "design1\design1.vdproj", "{A9502716-7FA8-4D57-A4BA-D73ABD397D75}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
