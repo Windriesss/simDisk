@@ -3,6 +3,7 @@
 #define _STRUCT_H_
 #include<Windows.h>
 #include<iostream>
+#include<bitset>
 using namespace std;
 
 struct DirectoryItem {//目录项
@@ -50,25 +51,6 @@ struct inode {//256B
 		else if (type == '1') ret = "-";
 		return ret;
 	}
-	void print() {
-		cout << "inode序号:" << idx << endl;
-		cout << "父目录的inode序号:" << parentIdx << endl;
-		cout << "指向该inode的文件数:" << linkNum << endl;
-		cout << "所属用户id:" << uid << endl;
-		cout << "所属组id:" << gid << endl;
-		cout << "保护模式:" << mod << endl;
-		cout << "文件名:" << name << endl;
-		cout << "文件类型 :" << type << endl;
-		cout << "创建时间:"; printTime(creatTime);
-		cout << "最后一次修改时间:"; printTime(modiTime);
-		cout << "文件大小:" << size <<"B" << endl;
-		cout << "数据块的地址:";
-		for (int i = 0; i < 14; ++i) {
-			if (dataBlock[i] > 0)
-				cout << dataBlock[i] << ' ';
-		}
-		cout << endl;
-	}
 };
 
 struct SuperBlock {
@@ -80,16 +62,23 @@ struct SuperBlock {
 	int inodePos;//i节点区,第几个字节开始是i结点区
 	int blockBMapPos;//块位图地址,即第几个字节开始，用13(12.5)个连续的数据块做块位图  
 	int blockPos;//数据块地址，即第几个字节开始
-	void print() {
-		cout << "\t磁盘容量:\t\t" << diskSize/1024/1024<<"MB" << endl;
-		cout << "\t磁盘块总数:\t\t" << blockNum<<"块" << endl;
-		cout << "\ti节点总数:\t\t" << inodeNum << endl;
-		cout << "\ti节点位图起始地址:\t" << inodeBMapPos/1024 << endl;
-		cout << "\ti节点区起始地址:\t" << inodePos/1024 << endl;
-		cout << "\t块位图起始地址:\t\t" << blockBMapPos/1024 << endl;
-		cout << "\t数据块起始地址:\t\t" << blockPos / 1024 << endl;
-	}
 };
 
+struct logInfo {
+	int uid;
+};
+
+struct File//Memory mapping file
+{
+	char cmd[1024 * 5];
+	char ret[1024 * 10];
+	int errorFlag;
+};
+
+struct AccessTable
+{
+	int readNum[8192];
+	bitset<8192> writeFlag;
+};
 
 #endif
